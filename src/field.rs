@@ -3,6 +3,8 @@ const MASK: u64 = (1u64 << LIMB_BITS) - 1;
 // Number of 51-bit limbs needed to represent a value modulo p = 2^255 - 19.
 pub(crate) const LIMB_COUNT: usize = 5;
 const P_LIMBS: [u64; LIMB_COUNT] = [MASK - 18, MASK, MASK, MASK, MASK];
+// The value of 1/2 modulo p = 2^254 - 8
+const INV_TWO: [u64; LIMB_COUNT] = [MASK - 8, MASK, MASK, MASK, (1 << 50) - 1];
 
 // Curve constants in 51-bit limbs. These are the single source of truth for both
 // the scalar path here and the AVX-512 field in `wide.rs` (which broadcasts them
@@ -60,6 +62,12 @@ impl Fe51 {
     pub(crate) fn one() -> Self {
         Self {
             limbs: [1, 0, 0, 0, 0],
+        }
+    }
+
+    pub(crate) fn one_half() -> Self {
+        Self {
+            limbs: INV_TWO,
         }
     }
 
@@ -160,6 +168,28 @@ impl Fe51 {
 
     pub(crate) fn double(&self) -> Self {
         self.add(self)
+    }
+
+    /// Field halving: `a / 2 mod p` as a one-bit right shift plus conditional
+    /// addition by 1/2 for odd a. Accepts loosely-reduced input (`< 2^52`) and 
+    /// returns a loosely-reduced result.
+    pub(crate) fn half(&self) -> Self {
+        debug_assert!(self.limbs.iter().all(|&limb| limb < (1u64 << 52)));
+        let a = &self.limbs;
+        let mut r = [0u64; LIMB_COUNT];
+        let mut i = 0;
+        while i < LIMB_COUNT - 1 {
+            r[i] = (a[i] >> 1) + ((a[i + 1] & 1) << (LIMB_BITS - 1));
+            i += 1;
+        }
+        r[LIMB_COUNT - 1] = a[LIMB_COUNT - 1] >> 1;
+
+        let floored = Self { limbs: r };
+        if a[0] & 1 == 0 {
+            floored
+        } else {
+            floored.add(&Self { limbs: INV_TWO })
+        }
     }
 
     pub(crate) fn multiply(&self, rhs: &Self) -> Self {
@@ -435,6 +465,26 @@ mod tests {
         for limbs in cases {
             let x = Fe51::from_limbs(limbs);
             assert!(x.square().equals(&x.multiply(&x)));
+        }
+    }
+
+    #[test]
+    fn half_is_inverse_of_double() {
+        let inv_two = Fe51::from_limbs(INV_TWO);
+        assert!(Fe51::one().half().equals(&inv_two)); // 1/2 == 2^-1
+
+        // Canonical even/odd, then loose even/odd.
+        let cases = [
+            [1_234_567_890_122, 2_222_222_222_222, 987_654_321, 111, 333],
+            [1_234_567_890_123, 2_222_222_222_222, 987_654_321, 111, 333],
+            [(1 << 51) + 2, 3, 0, 0, 0],
+            [(1 << 51) + 3, 3, 0, 0, 0],
+        ];
+        for limbs in cases {
+            let x = Fe51::from_limbs_unchecked(limbs);
+            assert!(x.half().double().equals(&x));
+            assert!(x.double().half().equals(&x));
+            assert!(x.half().equals(&x.multiply(&inv_two)));
         }
     }
 

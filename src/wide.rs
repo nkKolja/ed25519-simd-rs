@@ -885,8 +885,8 @@ pub(crate) mod avx512ifma {
         }
     }
 
-    /// Affine (`Z = 1`) precomputed point — the basepoint table's entry form.
-    /// No `z2` field: the mixed addition doubles the accumulator's `Z` instead.
+    /// Affine (`Z = 1/2`) precomputed point — the basepoint table's entry form.
+    /// No `z2` field: the mixed addition multiplication by 2Z is no-op instead.
     #[derive(Clone, Copy)]
     struct WideAffineCachedPoint {
         y_plus_x: WideFe,
@@ -971,16 +971,15 @@ pub(crate) mod avx512ifma {
             self.z = f.multiply(&g);
             self.y = g.multiply(&h);
         }
-        /// Mixed addition with an affine (`Z = 1`) cached point. Identical to
-        /// `add_cached_assign` except the `Z₁·z2` product collapses to
-        /// `Z₁.double()` — one fewer multiply, since `z2 = 2·Z₂ = 2`.
+        /// Mixed addition with an affine (`Z = 1/2`) cached point. Identical to
+        /// `add_cached_assign` except the `Z₁·2Z₂` product collapses to no-op.
         fn add_affine_cached_assign(&mut self, rhs: &WideAffineCachedPoint) {
             let a = self.y.subtract(&self.x).multiply_loose(&rhs.y_minus_x);
             let b = self.y.add_loose(&self.x).multiply_loose(&rhs.y_plus_x);
             let e = b.subtract_wide(&a);
             let h = b.add_loose(&a);
             let c = self.t.multiply_loose(&rhs.t2d);
-            let d = self.z.double_loose();
+            let d = self.z;
             let f = d.subtract_wide(&c);
             let g = d.add_loose(&c);
 
