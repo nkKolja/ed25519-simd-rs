@@ -26,7 +26,7 @@ pub(crate) struct PointTable {
 
 #[derive(Clone, Debug)]
 pub(crate) struct BasepointTable {
-    entries: [AffineCachedPoint; SIGNED_BASEPOINT_TABLE_SIZE],
+    entries: [NormalizedCachedPoint; SIGNED_BASEPOINT_TABLE_SIZE],
 }
 
 // `base_pair_digit` folds two radix-16 digits into a radix-256 digit with
@@ -84,20 +84,20 @@ impl CachedPoint {
     }
 }
 
-/// Affine cached precomputed normalised at `Z = 1/2`. 
+/// Half-scaled cached precomputed point normalised at `Z = 1/2`. 
 /// The reson for normalising at `Z = 1/2` instead of `Z = 1` is because the 
 /// addition function (add / add_cached_assign) in the multiplication ladder
 /// computes `d = Z₁·2Z₂`, so by setting 2Z₂ = 1 the multiplication reduces to a no-op.
 /// Furthermore this reduces the compressed point size from 4 to 3 field elements.
 #[derive(Clone, Debug)]
-pub(crate) struct AffineCachedPoint {
+pub(crate) struct NormalizedCachedPoint {
     y_plus_x: Fe51,
     y_minus_x: Fe51,
     t2d: Fe51,
 }
 
-impl AffineCachedPoint {
-    /// Build from affine coordinates (`Z = 1`) into coordinates (`Z = 1/2`)
+impl NormalizedCachedPoint {
+    /// Build from affine coordinates (`Z = 1`) into half-scaled (`Z = 1/2`)
     fn from_affine(x: &Fe51, y: &Fe51) -> Self {
         Self {
             y_plus_x: y.add(x).half(),
@@ -106,7 +106,7 @@ impl AffineCachedPoint {
         }
     }
 
-    /// Affine identity `(x, y) = (0, 1)`.
+    /// Normalized identity `(x, y) = (0, 1/2)`.
     fn identity() -> Self {
         Self {
             y_plus_x: Fe51::one_half(),
@@ -130,8 +130,8 @@ impl AffineCachedPoint {
 }
 
 /// Montgomery batch inversion of the `Z` coordinates, then normalize each point
-/// to affine cached form. One field inversion for the whole table.
-fn to_affine_cached_batch<const N: usize>(points: &[EdwardsPoint; N]) -> [AffineCachedPoint; N] {
+/// to cached form. One field inversion for the whole table.
+fn to_normalized_cached_batch<const N: usize>(points: &[EdwardsPoint; N]) -> [NormalizedCachedPoint; N] {
     // Forward pass: zinv[i] holds the running product of Z[0..i].
     let mut zinv: [Fe51; N] = core::array::from_fn(|_| Fe51::one());
     let mut acc = Fe51::one();
@@ -148,7 +148,7 @@ fn to_affine_cached_batch<const N: usize>(points: &[EdwardsPoint; N]) -> [Affine
     core::array::from_fn(|i| {
         let x = points[i].x.multiply(&zinv[i]);
         let y = points[i].y.multiply(&zinv[i]);
-        AffineCachedPoint::from_affine(&x, &y)
+        NormalizedCachedPoint::from_affine(&x, &y)
     })
 }
 
@@ -191,18 +191,18 @@ impl BasepointTable {
         for i in 1..BASEPOINT_TABLE_SIZE {
             points[i] = points[i - 1].add(&basepoint);
         }
-        // Normalize all multiples to affine cached form with one batch inversion.
-        let affine_points = to_affine_cached_batch(&points);
-        let negative_cached_points: [AffineCachedPoint; BASEPOINT_TABLE_SIZE] =
+        // Normalize all multiples with one batch inversion.
+        let affine_points = to_normalized_cached_batch(&points);
+        let negative_cached_points: [NormalizedCachedPoint; BASEPOINT_TABLE_SIZE] =
             core::array::from_fn(|i| affine_points[i].negate());
-        let identity_cached = AffineCachedPoint::identity();
+        let identity_cached = NormalizedCachedPoint::identity();
         let entries = signed_cached_entries(affine_points, negative_cached_points, identity_cached);
         Self { entries }
     }
 
-    /// Select the affine point for a signed digit in
+    /// Select the normalized point for a signed digit in
     /// `-BASEPOINT_TABLE_SIZE..=BASEPOINT_TABLE_SIZE`.
-    pub(crate) fn select_signed_affine_ref(&self, digit: i16) -> &AffineCachedPoint {
+    pub(crate) fn select_signed_normalized_ref(&self, digit: i16) -> &NormalizedCachedPoint {
         debug_assert!(
             (-(BASEPOINT_TABLE_SIZE as i16)..=(BASEPOINT_TABLE_SIZE as i16)).contains(&digit)
         );
@@ -390,7 +390,7 @@ mod tests {
             let expect_ymx = y.subtract(&x);
             let expect_t2d = x.multiply(&y).double().multiply(&Fe51::two_d());
 
-            let (ypx, ymx, t2d) = table.select_signed_affine_ref(d).coords();
+            let (ypx, ymx, t2d) = table.select_signed_normalized_ref(d).coords();
             assert!(ypx.equals(&expect_ypx), "y+x mismatch at digit {d}");
             assert!(ymx.equals(&expect_ymx), "y-x mismatch at digit {d}");
             assert!(t2d.equals(&expect_t2d), "t2d mismatch at digit {d}");
