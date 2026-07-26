@@ -164,8 +164,7 @@ impl PointTable {
         self.select_signed_cached_ref(2).coords().2.equals(&Fe51::two())
     }
 
-    /// Normalize all entries to affine (`Z = 1`) form with one batch inversion.
-    /// Called once per key at promotion.
+    #[cfg(test)]
     pub(crate) fn normalized_affine(&self) -> Self {
         Self::normalized_affine_batch(&[self])
             .pop()

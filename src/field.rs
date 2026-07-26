@@ -473,6 +473,29 @@ mod tests {
     }
 
     #[test]
+    fn invert_matches_naive_pow() {
+        let mut exp = [0xffu8; 32];
+        exp[0] = 0xeb;
+        exp[31] = 0x7f;
+        let cases = [
+            [1, 0, 0, 0, 0],
+            [MASK - 18, MASK, MASK, MASK, MASK - 1],
+            [
+                1_234_567_890_123,
+                2_222_222_222_222,
+                987_654_321_987,
+                1_111_111_111_111,
+                333_333_333_333,
+            ],
+        ];
+        for limbs in cases {
+            let x = Fe51::from_limbs(limbs);
+            assert!(x.invert().equals(&x.pow(&exp)));
+            assert!(x.multiply(&x.invert()).equals(&Fe51::one()));
+        }
+    }
+
+    #[test]
     fn canonical_bytes_bound() {
         let mut p_minus_one = P_BYTES;
         p_minus_one[0] -= 1;
