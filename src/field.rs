@@ -361,13 +361,25 @@ impl Fe51 {
         Some(Self::from_bytes_unchecked(bytes))
     }
 
+    /// x⁻¹ = x^(p−2) via the standard addition chain:
+    /// 254 squarings and 11 multiplies.
     pub(crate) fn invert(&self) -> Self {
-        let mut exp = [0xffu8; 32];
-        exp[0] = 0xeb;
-        exp[31] = 0x7f;
-        self.pow(&exp)
+        let x2 = self.square(); // 2
+        let x9 = x2.square_repeat::<2>().multiply(self); // 9
+        let x11 = x9.multiply(&x2); // 11
+
+        let x2_5 = x11.square().multiply(&x9); // 2^5 − 1
+        let x2_10 = x2_5.square_repeat::<5>().multiply(&x2_5); // 2^10 − 1
+        let x2_20 = x2_10.square_repeat::<10>().multiply(&x2_10); // 2^20 − 1
+        let x2_40 = x2_20.square_repeat::<20>().multiply(&x2_20); // 2^40 − 1
+        let x2_50 = x2_40.square_repeat::<10>().multiply(&x2_10); // 2^50 − 1
+        let x2_100 = x2_50.square_repeat::<50>().multiply(&x2_50); // 2^100 − 1
+        let x2_200 = x2_100.square_repeat::<100>().multiply(&x2_100); // 2^200 − 1
+        let x2_250 = x2_200.square_repeat::<50>().multiply(&x2_50); // 2^250 − 1
+        x2_250.square_repeat::<5>().multiply(&x11) // 2^255 − 21 = p − 2
     }
 
+    #[cfg(test)]
     fn pow(&self, exp: &[u8; 32]) -> Self {
         let mut acc = Self::one();
         let mut i = 255;
@@ -401,6 +413,7 @@ fn load_u64_le(bytes: &[u8; 32], offset: usize) -> u64 {
     u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap())
 }
 
+#[cfg(test)]
 fn get_bit(bytes: &[u8], bit: usize) -> bool {
     ((bytes[bit / 8] >> (bit % 8)) & 1) != 0
 }

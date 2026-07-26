@@ -167,29 +167,47 @@ impl PointTable {
     /// Normalize all entries to affine (`Z = 1`) form with one batch inversion.
     /// Called once per key at promotion.
     pub(crate) fn normalized_affine(&self) -> Self {
-        let mut z2_inv: [Fe51; SIGNED_POINT_TABLE_SIZE] =
-            core::array::from_fn(|_| Fe51::one());
+        Self::normalized_affine_batch(&[self])
+            .pop()
+            .expect("one table in, one table out")
+    }
+
+    /// Normalize several tables with ONE inversion shared across all their
+    /// entries — promotion normalizes every table of every promoting key in
+    /// a single pass.
+    pub(crate) fn normalized_affine_batch(tables: &[&Self]) -> Vec<Self> {
+        let n = tables.len() * SIGNED_POINT_TABLE_SIZE;
+        let z2_at = |i: usize| -> &Fe51 {
+            &tables[i / SIGNED_POINT_TABLE_SIZE].entries[i % SIGNED_POINT_TABLE_SIZE].z2
+        };
+        let mut z2_inv = vec![Fe51::one(); n];
         let mut acc = Fe51::one();
-        for i in 0..SIGNED_POINT_TABLE_SIZE {
+        for i in 0..n {
             z2_inv[i] = acc;
-            acc = acc.multiply(&self.entries[i].z2);
+            acc = acc.multiply(z2_at(i));
         }
         acc = acc.invert();
-        for i in (0..SIGNED_POINT_TABLE_SIZE).rev() {
+        for i in (0..n).rev() {
             z2_inv[i] = z2_inv[i].multiply(&acc);
-            acc = acc.multiply(&self.entries[i].z2);
+            acc = acc.multiply(z2_at(i));
         }
-        let entries = core::array::from_fn(|i| {
-            let e = &self.entries[i];
-            let z_inv = z2_inv[i].double(); // 1/Z = 2·z2⁻¹
-            CachedPoint::from_fields(
-                e.y_plus_x.multiply(&z_inv),
-                e.y_minus_x.multiply(&z_inv),
-                Fe51::two(),
-                e.t2d.multiply(&z_inv),
-            )
-        });
-        Self { entries }
+        tables
+            .iter()
+            .enumerate()
+            .map(|(t, table)| {
+                let entries = core::array::from_fn(|i| {
+                    let e = &table.entries[i];
+                    let z_inv = z2_inv[t * SIGNED_POINT_TABLE_SIZE + i].double(); // 1/Z = 2·z2⁻¹
+                    CachedPoint::from_fields(
+                        e.y_plus_x.multiply(&z_inv),
+                        e.y_minus_x.multiply(&z_inv),
+                        Fe51::two(),
+                        e.t2d.multiply(&z_inv),
+                    )
+                });
+                Self { entries }
+            })
+            .collect()
     }
 
     pub(crate) fn new(point: &EdwardsPoint) -> Self {

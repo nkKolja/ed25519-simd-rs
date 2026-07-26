@@ -273,22 +273,47 @@ impl<C: KeyCache> Verifier<C> {
         public_keys: &[[u8; batch::PUBLIC_KEY_LEN]; SIMD_LANES],
     ) {
         let hi_tables = avx512ifma::build_promoted_split_tables(promote_points);
-        for (lane, hi_table) in hi_tables.into_iter().enumerate() {
-            if !promote_lanes[lane] {
-                continue;
+
+        // The same key can sit in several lanes (padding or repeats);
+        // promote each key once.
+        let mut lanes = [0usize; SIMD_LANES];
+        let mut count = 0;
+        for lane in 0..SIMD_LANES {
+            if promote_lanes[lane]
+                && !lanes[..count]
+                    .iter()
+                    .any(|&l| public_keys[l] == public_keys[lane])
+            {
+                lanes[count] = lane;
+                count += 1;
             }
-            // The same key can sit in several lanes (padding or repeats);
-            // it gets promoted once, the cache ignores the rest.
+        }
+
+        // Normalize every table of every promoting key with one shared
+        // batch inversion, then adopt.
+        let mut alive: Vec<usize> = Vec::with_capacity(count);
+        let mut hit_counts: Vec<core::cell::Cell<u8>> = Vec::with_capacity(count);
+        let mut to_normalize: Vec<&PointTable> = Vec::with_capacity(2 * count);
+        for &lane in &lanes[..count] {
             let Some(existing) = self.cache.get(&public_keys[lane]) else {
                 continue; // evicted mid-batch by an insert above
             };
-            let upgraded = CachedPublicKey {
+            alive.push(lane);
+            hit_counts.push(existing.hits.clone());
+            to_normalize.push(&existing.table);
+            to_normalize.push(&hi_tables[lane]);
+        }
+        let mut normalized = PointTable::normalized_affine_batch(&to_normalize).into_iter();
+        drop(to_normalize); // release the cache borrows before inserting
+        for (i, &lane) in alive.iter().enumerate() {
+            let table = normalized.next().expect("two tables per promoted key");
+            let table_hi = normalized.next().expect("two tables per promoted key");
+            self.cache.insert(CachedPublicKey {
                 encoded: public_keys[lane],
-                table: existing.table.normalized_affine(),
-                table_hi: Some(hi_table.normalized_affine()),
-                hits: existing.hits.clone(),
-            };
-            self.cache.insert(upgraded);
+                table,
+                table_hi: Some(table_hi),
+                hits: hit_counts[i].clone(),
+            });
         }
     }
 
