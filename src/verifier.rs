@@ -265,6 +265,7 @@ impl<C: KeyCache> Verifier<C> {
     /// Build and adopt the promoted `A′` tables for the lanes that reached
     /// their second hit. Runs rarely, at most once per key in cache, and is
     /// therefore outlined. How often real traffic promotes is unmeasured.
+    #[cold]
     #[inline(never)]
     fn run_promotion(
         &mut self,
@@ -532,6 +533,7 @@ fn any_lane(lanes: &[bool; SIMD_LANES]) -> bool {
 
 /// Base points of the promoting lanes, identity elsewhere. 
 /// Outlined and called only when some lane promotes
+#[cold]
 #[inline(never)]
 fn recover_promote_points(
     cached_keys: &[Option<&CachedPublicKey>; SIMD_LANES],

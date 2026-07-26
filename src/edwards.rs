@@ -173,7 +173,10 @@ impl PointTable {
 
     /// Normalize several tables with ONE inversion shared across all their
     /// entries — promotion normalizes every table of every promoting key in
-    /// a single pass.
+    /// a single pass. `cold`: runs once per key, so it is compiled for size —
+    /// its code must not crowd the ladder out of the op cache.
+    #[cold]
+    #[inline(never)]
     pub(crate) fn normalized_affine_batch(tables: &[&Self]) -> Vec<Self> {
         let n = tables.len() * SIGNED_POINT_TABLE_SIZE;
         let z2_at = |i: usize| -> &Fe51 {
