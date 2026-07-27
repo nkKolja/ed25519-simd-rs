@@ -246,9 +246,9 @@ pub(crate) mod avx512ifma {
         let (pa, pb) = WideFe::pow_p_minus_5_over_8_x2(&sa.exp, &sb.exp);
         (decompress_finish(sa, pa), decompress_finish(sb, pb))
     }
-    /// Fixed-base adds fold THREE radix-16 digits into one radix-4096
-    /// digit — 21 triples (digits 0..62) + the lone top digit 63: 22 base
-    /// adds instead of 32 pair-folds. Doublings unchanged (63 × double4).
+    /// Fixed-base adds fold three radix-16 digits into one radix-4096
+    /// digit: 21 triples (digits 0..62) + the lone top digit 63.
+    /// In total 22 base adds (instead of 32 pair-folds). Doublings unchanged (63 × double4).
     /// Triple p is added when 3p doubling-blocks remain, carrying weight
     /// 16^{3p}; digit 63 rides the top add (weight 16⁶³).
     fn mul_base_minus_public(
@@ -1073,8 +1073,8 @@ pub(crate) mod avx512ifma {
 
         #[inline(never)]
         fn double4(&self) -> Self {
-            // F1 (audit): the three interior doublings emit LOOSE x, y, z
-            // (limb0 < 2^60, limbs 1..4 < 2^51 via reduce_ifma_loose) — their
+            // The three interior doublings emit LOOSE x, y, z
+            // (limb0 < 2^60, limbs 1..4 < 2^51 via reduce_ifma_loose). Their
             // only consumer is the next double_impl, whose squares
             // pre-normalize, whose e-term add keeps limb0 sums < 2^61, and
             // whose subtracts carry the 2048p wide bias. The FOURTH doubling
@@ -1102,17 +1102,18 @@ pub(crate) mod avx512ifma {
             let g = b.subtract_wide(&a);
             let f = b.subtract_sum_wide(&a, &c);
             let h = WideFe::negate_sum_wide(&a, &b);
-            // e, f, g, h come through subtract_wide/negate (reduce_loose
-            // tails): all limbs < 2^52 — strict, valid multiply operands.
             let t = if COMPUTE_T {
                 e.multiply(&h)
             } else {
                 WideFe::zero()
             };
-
+            
+            // e, f, g, h come through subtract_wide/negate (reduce_loose
+            // tails): all limbs < 2^52 -> valid multiply operands.
             if LOOSE_OUT {
-                // F1 interior form: skip the trailing reduce_loose pass;
-                // outputs are loose (limb0 < 2^60) per reduce_ifma_loose.
+                // Skip multiply's final carry sweep.
+                // Outputs: limb0 < 2^60, limbs 1..4 < 2^51 — exactly what the
+                // next doubling's square_loose/add_loose accept.
                 Self {
                     x: e.multiply_loose(&f),
                     y: g.multiply_loose(&h),

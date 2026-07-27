@@ -155,7 +155,7 @@ fn to_affine_cached_batch<const N: usize>(points: &[EdwardsPoint; N]) -> [Affine
 }
 
 /// Heap variant of `to_affine_cached_batch` for tables too large to build on
-/// the stack (Phase 3's ±2184-multiple radix-4096 table). Same Montgomery
+/// the stack (±2184-multiple radix-4096 table). Same Montgomery
 /// batch inversion: one field inversion for the whole table.
 fn to_affine_cached_batch_vec(points: &[EdwardsPoint]) -> Vec<AffineCachedPoint> {
     let n = points.len();
@@ -179,9 +179,9 @@ fn to_affine_cached_batch_vec(points: &[EdwardsPoint]) -> Vec<AffineCachedPoint>
         .collect()
 }
 
-/// Phase 3: radix-4096 fixed-base table — affine entries for `[d]B`,
-/// `d ∈ [−2184, 2184]` (three folded radix-16 digits: |d₀+16d₁+256d₂| ≤
-/// 8+128+2048). 4369 entries ≈ 524 KB, heap-allocated, built once per process.
+/// Radix-4096 fixed-base table: affine entries for `[d]B`, `d ∈ [−2184, 2184]` 
+/// (three folded radix-16 digits: |d₀+16d₁+256d₂| ≤ 8+128+2048). 
+/// 4369 entries ≈ 524 KB, heap-allocated, built once per process.
 #[derive(Debug)]
 pub(crate) struct BasepointTable4096 {
     entries: Vec<AffineCachedPoint>,
