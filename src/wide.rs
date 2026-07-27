@@ -1064,7 +1064,7 @@ pub(crate) mod avx512ifma {
         fn double(&self) -> Self {
             self.double_impl::<true, false>()
         }
-        /// Strict-output doubling, UNCHANGED by F1: the decide path's cofactor
+        /// Strict-output doubling, never loosened: the decide path's cofactor
         /// doublings feed `identity_lanes`/`equals_lanes`, which compare limb
         /// representations and need strict operands.
         fn double_without_t(&self) -> Self {
